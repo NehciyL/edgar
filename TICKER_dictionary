@@ -1,0 +1,43 @@
+# The code is use for match the blank check company from TICKER list with "CIK".
+# Read the list of SPAC companies from Excel
+shell_companys <- read.xlsx("List_for_blank_check _202406.xlsx") # list is from a manual way
+
+# Here we use sec.gov to get the company TICKER from CIK we have in the dataset.
+# the mapping resource is from official sec.gov: https://www.sec.gov/file/company-tickers-exchange
+# then through: https://www.sec.gov/files/company_tickers_exchange.json
+#install.packages("jspnlite")
+
+library(httr)
+library(jsonlite)
+
+file_path <- "~/Desktop/Local_file/Thesis/CodeForR/company_tickers_exchange.json" # Adjust the file path if necessary
+company_data <- fromJSON(file_path)
+
+# Convert the JSON data to a data frame
+company_df <- as.data.frame(company_data)
+company_df <- company_df %>% select(-1)
+# Display the first few rows of the data frame to understand its structure
+head(company_df)
+# Rename columns to more meaningful names
+company_df <- company_df %>%
+  rename(
+    CIK = data.1,
+    CompanyName = data.2,
+    Ticker = data.3,
+    Exchange = data.4
+  )
+
+colnames(shell_companys)
+
+Ticker <- company_df
+# here need to chekc the SEC.GOV can be auto matchin or not.
+shell_companys <- shell_companys[, !(names(shell_companys) %in% c("Website:", "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&SIC=6770&owner=include&match=starts-with&start=0&count=40&hidefilings=0"))]
+shell_companys$CIK <- as.character(shell_companys$CIK)
+Ticker$CIK <- as.character(Ticker$CIK)
+
+# Merge the shell_companys with company_df to get Ticker
+Ticker_list <- merge(shell_companys, Ticker, by = "CIK", all.x = TRUE)
+
+Ticker_list
+unique_tickers <- unique(Ticker_list$Ticker)
+num_unique_tickers <- length(unique_tickers)
