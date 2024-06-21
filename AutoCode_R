@@ -1,0 +1,76 @@
+# The code has been modified with auto sleep time, 10 request per second.
+# To make the following process more effecient.
+# first we get the data about the 's-1', we need to have the data for when the company submit their sec request.
+# For the company submit their request is under the code 's-1'
+# Load required libraries
+
+# Function to handle automatic downloading for multiple form types
+# Get different filing form in one request, be careful for the time consuming.
+
+getFilingsAuto_muti <- function(cik.no, form.types, filing.year, downl.permit = "y") {
+  all_results <- list()
+  
+  for (form.type in form.types) {
+    result <- tryCatch({
+      getFilings(cik.no = cik.no, form.type = form.type, filing.year = filing.year, downl.permit = downl.permit)
+    }, error = function(e) {
+      if (grepl("type y/n", e$message)) {
+        message("Encountered prompt, retrying...")
+        return(getFilings(cik.no = cik.no, form.type = form.type, filing.year = filing.year, useragent = useragent, downl.permit = downl.permit))
+      } else {
+        stop(e)
+      }
+    })
+    all_results <- append(all_results, list(result))
+  }
+  
+  combined_results <- do.call(rbind, all_results)
+  return(combined_results)
+}
+
+# Set the user agent for SEC Edgar API
+useragent <- "yichenliu.research@gmail.com" # set the userangent for the request , which is under SEC.GOV requirement.
+
+# Initialize an empty list to store the filings
+filings_list <- list()
+
+# Define the form types to fetch
+form_types <- c('S-1', 'F-1', 'CERT') # make the form list here, under all the needs.
+
+# Define the year range
+year_range <- 1998:2024 # set the year range for the dataset
+
+# Loop through the CIKs in batches and for each year to respect the rate limit
+batch_size <- 10 # the way to respect the time limit, in this case we set 10 sec for each request.
+
+# Loop the function under the condition
+for (year in year_range) {
+  for (i in seq(1, length(unique_ciks), by = batch_size)) {
+    # Get the current batch of CIKs
+    current_batch <- unique_ciks[i:min(i + batch_size - 1, length(unique_ciks))]
+    
+    # Fetch filings for the current batch and year using the custom function
+    batch_filings <- getFilingsAuto_muti(
+      cik.no = current_batch,
+      form.types = form_types,
+      filing.year = year,
+      
+      downl.permit = "y" # Automatically download without manual input
+    )
+    
+    # Append the batch results to the list
+    filings_list <- append(filings_list, list(batch_filings))
+    
+    # Print progress
+    print(paste("Processed batch", i, "to", min(i + batch_size - 1, length(unique_ciks)), "for year", year))
+    
+    # Pause for a second to respect the rate limit
+    Sys.sleep(1)
+  }
+}
+
+# Combine the list of filings into a single data frame
+company_filings <- do.call(rbind, lapply(filings_list, as.data.frame))
+
+# Print the combined results
+print(company_filings)
