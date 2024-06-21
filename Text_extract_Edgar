@@ -1,0 +1,115 @@
+library(stringr)
+library(dplyr)
+library(purrr)
+library(openxlsx)
+library(edgar)
+# import all the necessary documents for teh text extract.
+# This task should be done when we already download all the form we need
+# No other operation for this, just extract the text from the form with key words (condition)
+# the function updated merge all the info from the text, 
+# the key info to extract: company name; CIK; filing date; item information == events title
+# description== events title; one more parameter add here is for extract item from the text section
+# with this function parrt, it not need to merge with other dataframe.
+
+extract_filing_info <- function(text_content) {
+  # Extract company name
+  company_name <- str_match(text_content, "COMPANY CONFORMED NAME:\\s*(.*)")[2]
+  
+  # Extract CIK
+  cik <- str_match(text_content, "CENTRAL INDEX KEY:\\s*(\\d+)")[2]
+  
+  # Extract filing date
+  filing_date <- str_match(text_content, "FILED AS OF DATE:\\s*(\\d{8})")[2]
+  filing_date <- if (!is.na(filing_date)) as.Date(filing_date, format = "%Y%m%d") else NA
+  
+  # Extract item information from the standard section
+  item_information <- str_match(text_content, "ITEM INFORMATION:(.*)<TEXT>")[2]
+  
+  # Extract item information from the text section (case-insensitive)
+  item_information_text <- str_match_all(text_content, regex("(?i)item \\d+[a-z]*:[^\\r\\n]*"))
+  item_information_text <- if (length(item_information_text[[1]]) > 0) {
+    paste(unlist(item_information_text), collapse = "; ")
+  } else {
+    NA
+  }
+  
+  # Extract description
+  description <- str_match(text_content, "<DESCRIPTION>(.*)")[2]
+  
+  # Extract text
+  text <- str_match(text_content, "<TEXT>(.*)")[2] # this part it only words with certain words.
+  
+  # Extract the file name and if the file_number is shows
+  
+  file_name <- str_match(text_content, "<FILENAME>(.*)")[2]
+  # The function above can be modified with different needs, but need to makethe changes with different text/date/number, etc,.
+  # we will construct all the extract data in a datafrme 
+  # Create a data frame from the extracted information
+  df <- data.frame(
+    CompanyName = company_name,
+    CIK = as.integer(cik),
+    FilingDate = filing_date,
+    FileName = file_name,
+    ItemInformationStandard = str_trim(item_information),
+    ItemInformationText = str_trim(item_information_text),
+    Description = description,
+    Text = text,
+    
+    stringsAsFactors = FALSE
+  )
+  
+  return(df)
+}
+
+# Function to process all filings in separate folders
+process_text_filings <- function(main_directory) {
+  # Check if the main directory exists
+  if (!dir.exists(main_directory)) {
+    stop("The specified directory does not exist.")
+  }
+  
+  # List all subdirectories (company folders) in the main directory
+  company_folders <- list.dirs(main_directory, full.names = TRUE, recursive = FALSE)
+  
+  # Initialize an empty list to store the results
+  results_list <- list()
+  
+  # Loop through each company folder
+  for (company_folder in company_folders) {
+    # List all .txt files in the company folder
+    files <- list.files(company_folder, pattern = "\\.txt$", full.names = TRUE)
+    
+    # Check if there are any files in the folder
+    if (length(files) == 0) {
+      next
+    }
+    
+    # Debug: Print the company folder being processed
+    print(paste("Processing company folder:", company_folder))
+    
+    # Loop through each file in the company folder and extract the information
+    for (file in files) {
+      # Debug: Print the file being processed
+      print(paste("Processing file:", file))
+      
+      text_content <- readLines(file, warn = FALSE)
+      text_content <- paste(text_content, collapse = "\n")
+      extracted_info <- extract_filing_info(text_content)
+      results_list <- append(results_list, list(extracted_info))
+    }
+  }
+  
+  # Combine the list of data frames into a single data frame
+  results <- bind_rows(results_list)
+  
+  return(results)
+}
+
+# Define the main directory where the folders for each company's filings are stored
+main_directory <- "/Users/a/Desktop/Local_file/Thesis/CodeForR/ThesisCode/edgar_Filings/Form 8-K"
+
+# Process all filings and store the results in a data frame
+extracted_data <- process_text_filings(main_directory)
+
+# Print the extracted data
+print(extracted_data)
